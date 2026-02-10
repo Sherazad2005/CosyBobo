@@ -1,10 +1,12 @@
 import express from "express";
 import cors from "cors";
 import prisma from "./prisma/client.js";
+import authRoutes from "./routes/auth.routes.js";
+
+
 
 const app = express();
 
-// Permet à res.json() de gérer les BigInt (ids MySQL BIGINT)
 BigInt.prototype.toJSON = function () {
     return this.toString();
 };
@@ -12,6 +14,8 @@ BigInt.prototype.toJSON = function () {
 
 app.use(cors());
 app.use(express.json());
+app.use("/auth", authRoutes);
+
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok", message: "Backend running" });
