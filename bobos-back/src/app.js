@@ -2,8 +2,9 @@ import express from "express";
 import cors from "cors";
 import prisma from "./prisma/client.js";
 import authRoutes from "./routes/auth.routes.js";
-
-
+import ingredientsRoutes from "./routes/ingredients.routes.js";
+import recipesRoutes from "./routes/recipes.routes.js";
+import LabRoutes from "./routes/lab.routes.js";
 
 const app = express();
 
@@ -15,6 +16,10 @@ BigInt.prototype.toJSON = function () {
 app.use(cors());
 app.use(express.json());
 app.use("/auth", authRoutes);
+app.use("/ingredients", ingredientsRoutes);
+app.use("/recipes", recipesRoutes);
+app.use("/Lab", LabRoutes);
+
 
 
 app.get("/health", (req, res) => {
