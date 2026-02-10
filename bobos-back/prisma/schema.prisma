@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model discovered_recipes {
+  restaurant_id BigInt      @db.UnsignedBigInt
+  recipe_id     BigInt      @db.UnsignedBigInt
+  discovered_at DateTime    @default(now()) @db.DateTime(0)
+  recipes       recipes     @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_dr_recipe")
+  restaurants   restaurants @relation(fields: [restaurant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_dr_restaurant")
+
+  @@id([restaurant_id, recipe_id])
+  @@index([recipe_id], map: "fk_dr_recipe")
+}
+
+model ingredients {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  name               String               @unique(map: "name") @db.VarChar(80)
+  icon_url           String?              @db.VarChar(255)
+  unit_cost          Int                  @default(0)
+  inventory          inventory[]
+  recipe_ingredients recipe_ingredients[]
+}
+
+model inventory {
+  restaurant_id BigInt      @db.UnsignedBigInt
+  ingredient_id BigInt      @db.UnsignedBigInt
+  qty           Int         @default(0)
+  ingredients   ingredients @relation(fields: [ingredient_id], references: [id], onUpdate: NoAction, map: "fk_inv_ingredient")
+  restaurants   restaurants @relation(fields: [restaurant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_inv_restaurant")
+
+  @@id([restaurant_id, ingredient_id])
+  @@index([ingredient_id], map: "fk_inv_ingredient")
+}
+
+model orders {
+  id            BigInt        @id @default(autoincrement()) @db.UnsignedBigInt
+  restaurant_id BigInt        @db.UnsignedBigInt
+  recipe_id     BigInt        @db.UnsignedBigInt
+  status        orders_status @default(pending)
+  created_at    DateTime      @default(now()) @db.DateTime(0)
+  expires_at    DateTime      @db.DateTime(0)
+  served_at     DateTime?     @db.DateTime(0)
+  recipes       recipes       @relation(fields: [recipe_id], references: [id], onUpdate: NoAction, map: "fk_order_recipe")
+  restaurants   restaurants   @relation(fields: [restaurant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_order_restaurant")
+
+  @@index([recipe_id], map: "fk_order_recipe")
+  @@index([expires_at], map: "idx_orders_expires")
+  @@index([restaurant_id, status], map: "idx_orders_restaurant_status")
+}
+
+model recipe_ingredients {
+  recipe_id     BigInt      @db.UnsignedBigInt
+  ingredient_id BigInt      @db.UnsignedBigInt
+  qty           Int         @default(1)
+  ingredients   ingredients @relation(fields: [ingredient_id], references: [id], onUpdate: NoAction, map: "fk_ri_ingredient")
+  recipes       recipes     @relation(fields: [recipe_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_ri_recipe")
+
+  @@id([recipe_id, ingredient_id])
+  @@index([ingredient_id], map: "fk_ri_ingredient")
+}
+
+model recipes {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  name               String               @unique(map: "name") @db.VarChar(80)
+  image_url          String?              @db.VarChar(255)
+  sell_price         Int                  @default(0)
+  discovered_recipes discovered_recipes[]
+  orders             orders[]
+  recipe_ingredients recipe_ingredients[]
+}
+
+model restaurants {
+  id                 BigInt               @id @default(autoincrement()) @db.UnsignedBigInt
+  user_id            BigInt               @unique(map: "user_id") @db.UnsignedBigInt
+  name               String               @db.VarChar(80)
+  satisfaction       Int                  @default(20)
+  cash               Int                  @default(0)
+  created_at         DateTime             @default(now()) @db.DateTime(0)
+  discovered_recipes discovered_recipes[]
+  inventory          inventory[]
+  orders             orders[]
+  users              users                @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_restaurant_user")
+  transactions       transactions[]
+}
+
+model transactions {
+  id            BigInt            @id @default(autoincrement()) @db.UnsignedBigInt
+  restaurant_id BigInt            @db.UnsignedBigInt
+  type          transactions_type
+  amount        Int
+  created_at    DateTime          @default(now()) @db.DateTime(0)
+  meta_json     Json?
+  restaurants   restaurants       @relation(fields: [restaurant_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_tx_restaurant")
+
+  @@index([restaurant_id, created_at], map: "idx_tx_restaurant_date")
+}
+
+model users {
+  id            BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  email         String       @unique(map: "email") @db.VarChar(190)
+  password_hash String       @db.VarChar(255)
+  created_at    DateTime     @default(now()) @db.DateTime(0)
+  restaurants   restaurants?
+}
+
+enum transactions_type {
+  buy
+  sale
+  penalty
+  bonus
+}
+
+enum orders_status {
+  pending
+  served
+  expired
+}
