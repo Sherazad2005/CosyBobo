@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth.routes.js";
 import ingredientsRoutes from "./routes/ingredients.routes.js";
 import recipesRoutes from "./routes/recipes.routes.js";
 import LabRoutes from "./routes/lab.routes.js";
+import OrderRoutes from "./routes/orders.routes.js";
 
 const app = express();
 
@@ -18,7 +19,9 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/ingredients", ingredientsRoutes);
 app.use("/recipes", recipesRoutes);
-app.use("/Lab", LabRoutes);
+app.use("/lab", LabRoutes);
+app.use("/orders", OrderRoutes);
+
 
 
 
