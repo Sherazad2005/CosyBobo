@@ -1,6 +1,7 @@
 import { Router } from "express";
 import prisma from "../prisma/client.js";
 import { authMiddleware } from "../middleware/auth.js";
+import { serveOrder } from "../services/orders.service.js";
 
 const router = Router();
 
@@ -37,5 +38,33 @@ router.get("/pending", authMiddleware, async (req, res) => {
         res.status(500).json({ error: "Server error" });
     }
 });
+
+router.post("/:id/serve", authMiddleware, async (req, res) => {
+    try {
+        const userId = BigInt(req.user.userId);
+
+        const restaurant = await prisma.restaurants.findUnique({
+            where: { user_id: userId },
+            select: { id: true },
+        });
+
+        if (!restaurant) return res.status(404).json({ error: "Restaurant not found" });
+
+        const result = await serveOrder({
+            restaurantId: restaurant.id,
+            orderId: req.params.id,
+        });
+
+        if (!result.ok) {
+            return res.status(result.status).json({ error: result.error });
+        }
+
+        return res.json(result.data);
+    } catch (err) {
+        console.error("SERVE ROUTE ERROR:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
 
 export default router;

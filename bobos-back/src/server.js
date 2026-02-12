@@ -4,6 +4,8 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import app from "./app.js";
 import prisma from "./prisma/client.js";
+import { serveOrder } from "./services/orders.service.js";
+
 
 const PORT = process.env.PORT || 3001;
 
@@ -48,65 +50,22 @@ io.on("connection", (socket) => {
 
     socket.on("orders:serve", async ({ orderId }) => {
         try {
-            const order = await prisma.orders.findUnique({
-                where: { id: BigInt(orderId) },
-            });
+            const restaurantId = rid; // rid vient du scope connection
 
-            if (!order || order.restaurant_id !== rid) {
-                return socket.emit("orders:error", { message: "Order not found" });
-            }
-            if (order.status !== "pending") {
-                return socket.emit("orders:error", { message: "Order not pending" });
-            }
-            if (new Date(order.expires_at).getTime() < Date.now()) {
-                return socket.emit("orders:error", { message: "Order expired" });
+            const result = await serveOrder({ restaurantId, orderId });
+
+            if (!result.ok) {
+                return socket.emit("orders:error", { message: result.error });
             }
 
-
-            const discovered = await prisma.discovered_recipes.findUnique({
-                where: {
-                    restaurant_id_recipe_id: {
-                        restaurant_id: rid,
-                        recipe_id: order.recipe_id,
-                    },
-                },
-            });
-
-            if (!discovered) {
-                return socket.emit("orders:error", { message: "Recipe not discovered" });
-            }
-
-            // update atomique: serve + satisfaction +1
-            const newSatisfaction = await prisma.$transaction(async (tx) => {
-                const up = await tx.orders.updateMany({
-                    where: { id: order.id, status: "pending" },
-                    data: { status: "served", served_at: new Date() },
-                });
-                if (up.count === 0) return null;
-
-                const resto = await tx.restaurants.update({
-                    where: { id: rid },
-                    data: { satisfaction: { increment: 1 } },
-                    select: { satisfaction: true },
-                });
-
-                return resto.satisfaction;
-            });
-
-            if (newSatisfaction === null) {
-                return socket.emit("orders:error", { message: "Already processed" });
-            }
-
-            io.to(room).emit("orders:update", {
-                orderId: order.id.toString(),
-                status: "served",
-                satisfaction: newSatisfaction,
-            });
+            io.to(room).emit("orders:update", result.data);
         } catch (err) {
-            console.error("SERVE ERROR:", err);
+            console.error("SERVE SOCKET ERROR:", err);
             socket.emit("orders:error", { message: "Server error" });
         }
     });
+
+
 });
 
 

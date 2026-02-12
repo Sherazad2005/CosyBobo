@@ -6,11 +6,11 @@ const socket = io("http://localhost:3001", {
     auth: { token },
 });
 
-socket.on("connect", () => console.log("✅ connected:", socket.id));
-socket.on("connected", (data) => console.log("✅ server says:", data));
+socket.on("connect", () => console.log("connected:", socket.id));
+socket.on("connected", (data) => console.log("server says:", data));
 
 socket.on("orders:new", (order) => {
-    console.log("🆕 NEW ORDER:", order);
+    console.log("NEW ORDER:", order);
 
 
 });
