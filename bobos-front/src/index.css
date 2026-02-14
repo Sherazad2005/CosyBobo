@@ -1,1 +1,8 @@
 @import "tailwindcss";
+
+.image-pixel {
+    image-rendering: pixelated;
+}
+.background-image {
+    background-image: url('/cafe-bg.jpg');
+}
