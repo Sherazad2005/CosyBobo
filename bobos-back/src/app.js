@@ -6,7 +6,9 @@ import ingredientsRoutes from "./routes/ingredients.routes.js";
 import recipesRoutes from "./routes/recipes.routes.js";
 import LabRoutes from "./routes/lab.routes.js";
 import OrderRoutes from "./routes/orders.routes.js";
-
+import MarketRoutes from "./routes/market.routes.js";
+import restaurantsRoutes from "./routes/restaurant.routes.js";
+import transactionsRoutes from "./routes/transactions.routes.js";
 const app = express();
 
 BigInt.prototype.toJSON = function () {
@@ -21,8 +23,9 @@ app.use("/ingredients", ingredientsRoutes);
 app.use("/recipes", recipesRoutes);
 app.use("/lab", LabRoutes);
 app.use("/orders", OrderRoutes);
-
-
+app.use("/market", MarketRoutes);
+app.use("/restaurant", restaurantsRoutes);
+app.use("/transactions", transactionsRoutes);
 
 
 app.get("/health", (req, res) => {

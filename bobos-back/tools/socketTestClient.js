@@ -16,7 +16,7 @@ socket.on("orders:new", (order) => {
 });
 
 socket.on("orders:update", (data) => console.log("ORDER UPDATE:", data));
-socket.on("orders:error", (data) => console.log("⚠ORDER ERROR:", data));
+socket.on("orders:error", (data) => console.log("ORDER ERROR:", data));
 socket.on("game:over", (data) => console.log("GAME OVER:", data));
 
 socket.on("connect_error", (err) => {

@@ -19,7 +19,7 @@ router.post("/register", async (req, res) => {
 
         const password_hash = await bcrypt.hash(password, 10);
 
-        // transaction: create user + restaurant
+
         const user = await prisma.$transaction(async (tx) => {
             const createdUser = await tx.users.create({
                 data: { email, password_hash },

@@ -9,6 +9,8 @@ import { serveOrder } from "./services/orders.service.js";
 
 const PORT = process.env.PORT || 3001;
 
+const ORDER_PENALTY = Number(process.env.ORDER_PENALTY ?? 10);
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] },
@@ -125,7 +127,7 @@ setInterval(async () => {
         for (const o of expired) {
             const rid = o.restaurant_id;
 
-            const newSatisfaction = await prisma.$transaction(async (tx) => {
+            const result = await prisma.$transaction(async (tx) => {
                 const up = await tx.orders.updateMany({
                     where: { id: o.id, status: "pending" },
                     data: { status: "expired" },
@@ -134,24 +136,45 @@ setInterval(async () => {
 
                 const resto = await tx.restaurants.update({
                     where: { id: rid },
-                    data: { satisfaction: { decrement: 10 } },
-                    select: { satisfaction: true },
+                    data: {
+                        satisfaction: { decrement: 10 },
+                        cash: { decrement: ORDER_PENALTY },
+                    },
+                    select: { satisfaction: true, cash: true },
                 });
 
-                return resto.satisfaction;
+                await tx.transactions.create({
+                    data: {
+                        restaurant_id: rid,
+                        type: "penalty",
+                        amount: ORDER_PENALTY,
+                        meta_json: {
+                            orderId: o.id.toString(),
+                            reason: "expired_order",
+                        },
+                    },
+                });
+
+                return { satisfaction: resto.satisfaction, cash: resto.cash };
             });
 
-            if (newSatisfaction === null) continue;
+            if (result === null) continue;
 
             const room = `restaurant:${rid.toString()}`;
+
             io.to(room).emit("orders:update", {
                 orderId: o.id.toString(),
                 status: "expired",
-                satisfaction: newSatisfaction,
+                satisfaction: result.satisfaction,
+                cash: result.cash,
             });
 
-            if (newSatisfaction < 0) {
+            if (result.satisfaction < 0) {
                 io.to(room).emit("game:over", { reason: "satisfaction" });
+            }
+
+            if (result.cash < 0) {
+                io.to(room).emit("game:over", { reason: "cash" });
             }
         }
     } catch (e) {

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
+import prisma from "../prisma/client.js";
 
-export function authMiddleware(req, res, next) {
+export async function authMiddleware(req, res, next) {
     const header = req.headers.authorization;
 
     if (!header?.startsWith("Bearer ")) {
@@ -11,9 +12,26 @@ export function authMiddleware(req, res, next) {
 
     try {
         const payload = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = payload; // { userId }
+
+        const userId = BigInt(payload.userId);
+
+        const restaurant = await prisma.restaurants.findUnique({
+            where: { user_id: userId },
+            select: { id: true },
+        });
+
+        if (!restaurant) {
+            return res.status(404).json({ error: "Restaurant not found" });
+        }
+
+        req.user = {
+            userId: userId.toString(),
+            restaurantId: restaurant.id.toString(),
+        };
+
         next();
     } catch (err) {
         return res.status(401).json({ error: "Invalid token" });
     }
 }
+
