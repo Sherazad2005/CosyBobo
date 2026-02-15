@@ -1,184 +1,263 @@
-// Ecran de lab for the coffee making part
-// image de fond --> panneau central -- liste des ingrédients clickable
-// --> 3 emplacements (slot) pour les ingrédients choisis + deux boutons (reset et brew)
-
-import { useState } from 'react';
-
-// un id = un ingredient et un nom affiché et une icône dans /public/ingredients
-const INGREDIENTS = [
-  { id: 'coffee', name: 'Coffee', icon: '/ingredients/coffee.png' },
-  { id: 'milk', name: 'Milk', icon: '/ingredients/milk.png' },
-  { id: 'matcha', name: 'Matcha', icon: '/ingredients/matcha.png' },
-  { id: 'chai', name: 'Chai', icon: '/ingredients/chai.png' },
-  { id: 'ginger', name: 'Ginger', icon: '/ingredients/ginger.png' },
-  { id: 'cinnamon', name: 'Cinnamon', icon: '/ingredients/cinnamon.png' },
-  { id: 'honey', name: 'Honey', icon: '/ingredients/honey.png' },
-  { id: 'lemon', name: 'Lemon', icon: '/ingredients/lemon.png' },
-];
+import { useEffect, useMemo, useState } from "react";
 
 function Lab() {
-  //"slots" = de trois cases vides au debut
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+  const token = localStorage.getItem("token");
+
+  const [ingredients, setIngredients] = useState([]);
+
   const [slots, setSlots] = useState([null, null, null]);
+
+  const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState(""); // succès / infos
+  const [error, setError] = useState(""); // erreurs
+
+  const ingredientById = useMemo(() => {
+    const m = new Map();
+    for (const ing of ingredients) m.set(String(ing.id), ing);
+    return m;
+  }, [ingredients]);
+
+  function getIngredientIcon(ing) {
+    if (!ing) return "";
+    if (ing.icon_url) return ing.icon_url;
+
+    const safe = String(ing.name || "")
+        .toLowerCase()
+        .trim()
+        .replaceAll(" ", "_");
+    return `/ingredients/${safe}.png`;
+  }
+
+  useEffect(() => {
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
+    (async () => {
+      try {
+        setError("");
+        setInfo("");
+
+        const res = await fetch(`${API_URL}/ingredients`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem("token");
+          window.location.href = "/login";
+          return;
+        }
+
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(txt || "Failed to load ingredients");
+        }
+
+        const data = await res.json();
+        setIngredients(Array.isArray(data) ? data : data?.ingredients ?? []);
+      } catch (e) {
+        setError(e?.message || "Cannot load ingredients");
+      }
+    })();
+  }, [API_URL, token]);
 
   function handleAddIngredient(ingredientId) {
     setSlots((currentSlots) => {
-      // On copie le tableau actuel pour pas modifier manuellement
       const updated = [...currentSlots];
-
-      // Je cherche la première position qui est vide (null)
       const emptyIndex = updated.findIndex((slot) => slot === null);
-
-      // si case vide on y met l'ingredient
-      if (emptyIndex !== -1) {
-        updated[emptyIndex] = ingredientId;
-      }
-
+      if (emptyIndex !== -1) updated[emptyIndex] = String(ingredientId);
       return updated;
     });
   }
 
-  // Vide complètement les 3 slots (remet les cases à null null null)
   function handleReset() {
     setSlots([null, null, null]);
+    setError("");
+    setInfo("");
   }
 
-  // Pour l'instant brew va juste faire des log des ingredients choisis
-  // et apres on va envoyer les ids au back via /lab/experiment
-  function handleBrew() {
-    console.log('Brewing with slots:', slots);
-    // Appeler l'api ici pour relier au backend
+  async function handleBrew() {
+    setError("");
+    setInfo("");
+
+    const ingredientIds = slots.filter(Boolean).map((id) => Number(id));
+
+    if (ingredientIds.length === 0) {
+      setError("Choisis au moins 1 ingrédient.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/lab/experiment`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ingredientIds }),
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        window.location.href = "/login";
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data?.error || "Experiment failed");
+        return;
+      }
+
+      if (data?.success) {
+        const recipeName = data?.recipe?.name || "Recette inconnue";
+        setInfo(`Recette découverte : ${recipeName} !`);
+        setSlots([null, null, null]);
+      } else {
+        setError("Aucune recette ne correspond à cette combinaison.");
+        setSlots([null, null, null]);
+      }
+    } catch (e) {
+      setError("connection to server error");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  // TOUT le JSX doit être retourné ici
+  function slotLabel(slotId) {
+    if (!slotId) return "(vide)";
+    const ing = ingredientById.get(String(slotId));
+    return ing ? ing.name : "(?)";
+  }
+
   return (
-    <>
-      {/* Conteneur avec image de fond */}
-      <div
-        className="min-h-screen bg-cover bg-center flex items-center justify-center"
-        style={{ backgroundImage: "url('/cafe-bg.jpg')" }} // image dans public/cafe-bg.jpg.jpg
-      >
-        {/* Panneau central type machine Coffee Talk */}
-        <div className="bg-[#1b120f]/85 border border-black/40 rounded-3xl shadow-2xl p-6 w-full max-w-5xl text-[#f5e9da]">
-          {/* titre */}
-          <h1 className="text-2xl font-bold text-center mb-4 tracking-wide">
-            Bobo&apos;s Brew Station
-          </h1>
+      <>
 
-          <div className="grid grid-cols-3 gap-4">
-            {/* Colonne gauche : liste des ingrédients */}
-            <div>
-              <h2 className="text-sm font-semibold mb-2 uppercase tracking-widest">
-                Ingrédients
-              </h2>
-              <div className="space-y-2">
-                {INGREDIENTS.map((ingredient) => (
-                  <button
-                    key={ingredient.id}
-                    type="button"
-                    onClick={() => handleAddIngredient(ingredient.id)}
-                    className="w-full flex items-center gap-3 bg-[#2a1c16] hover:bg-[#3a261d] border border-black/40 rounded-xl px-3 py-2 text-left transition"
-                  >
-                    <img
-                      src={ingredient.icon}
-                      alt={ingredient.name}
-                      className="h-8 w-8 image-pixel"
-                    />
-                    <span className="text-sm font-medium">
-                      {ingredient.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+        <div
+            className="min-h-screen flex items-center justify-center bg-cover bg-center"
+            style={{ backgroundImage: "url('/cafe-bg.jpg')" }}
+        >
 
-            {/* Colonne centre : les 3 slots */}
-            <div>
-              <h2 className="text-sm font-semibold mb-2 uppercase tracking-widest text-center">
-                Recette
-              </h2>
-              <div className="space-y-3">
-                {slots.map((slot, index) => {
-                  // Je recup l'ingredient complet si il y a dans le slot
-                  const ingredient = INGREDIENTS.find((ing) => ing.id === slot);
+          <div className="w-[95%] max-w-6xl rounded-3xl bg-black/40 p-6 text-white shadow-xl backdrop-blur-sm">
+            <h1 className="text-center text-4xl font-extrabold mb-6">
+              Bobo&apos;s Brew Station
+            </h1>
 
-                  return (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between bg-[#2a1c16] border border-black/40 rounded-xl px-4 py-2"
-                    >
-                      <span className="text-xs uppercase tracking-widest text-[#d0bba3]">
-                        Slot {index + 1}
-                      </span>
-                      {ingredient ? (
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={ingredient.icon}
-                            alt={ingredient.name}
-                            className="h-8 w-8 image-pixel"
-                          />
-                          <span className="text-sm font-medium">
-                            {ingredient.name}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-[#8c7360]">
-                          (vide)
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+            {error && (
+                <div className="mb-4 rounded-xl bg-red-600/20 border border-red-400/40 px-4 py-2 text-sm">
+                  {error}
+                </div>
+            )}
+            {info && (
+                <div className="mb-4 rounded-xl bg-green-600/20 border border-green-400/40 px-4 py-2 text-sm">
+                  {info}
+                </div>
+            )}
 
-              {/* Boutons Reset / Brew */}
-              <div className="mt-4 flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={handleReset}
-                  className="px-4 py-2 text-xs font-semibold uppercase tracking-widest rounded-lg border border-[#d89a6a]/60 text-[#d89a6a] hover:bg-[#d89a6a]/10 transition"
-                >
-                  Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={handleBrew}
-                  className="px-5 py-2 text-xs font-semibold uppercase tracking-widest rounded-lg bg-[#d89a6a] text-[#1b130f] hover:bg-[#e5aa7a] transition"
-                >
-                  Brew
-                </button>
-              </div>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <h2 className="text-xl font-bold mb-3">INGRÉDIENTS</h2>
 
-            {/* Colonne droite panneau d'infos pour l'instant c'est un décor */}
-            <div>
-              <h2 className="text-sm font-semibold mb-2 uppercase tracking-widest">
-                Profil de la boisson
-              </h2>
-              <div className="space-y-3 text-xs">
-                {['Warm', 'Cool', 'Sweet', 'Bitter'].map((label) => (
-                  <div key={label}>
-                    <div className="flex justify-between mb-1">
-                      <span className="uppercase tracking-widest">
-                        {label}
-                      </span>
-                      <span className="text-[#8c7360]">0 / 5</span>
-                    </div>
-                    <div className="flex gap-1">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <div
-                          key={i}
-                          className="h-3 flex-1 bg-[#2a1c16] border border-black/50 rounded-sm"
+                <div className="space-y-3 max-h-[520px] overflow-auto pr-2">
+                  {ingredients.map((ing) => (
+                      <button
+                          key={String(ing.id)}
+                          onClick={() => handleAddIngredient(ing.id)}
+                          className="w-full flex items-center gap-3 rounded-2xl bg-[#2a1b16]/70 border border-white/10 px-4 py-3 hover:bg-[#2a1b16] transition"
+                          type="button"
+                          title="Ajouter au premier slot vide"
+                      >
+                        <img
+                            src={getIngredientIcon(ing)}
+                            alt={ing.name}
+                            className="h-10 w-10 object-contain"
+                            onError={(e) => {
+                              // fallback si image introuvable
+                              e.currentTarget.style.display = "none";
+                            }}
                         />
-                      ))}
-                    </div>
+                        <span className="font-semibold">{ing.name}</span>
+                      </button>
+                  ))}
+
+                  {ingredients.length === 0 && (
+                      <div className="text-sm opacity-70">
+                        Aucun ingrédient chargé (vérifie /ingredients).
+                      </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <h2 className="text-xl font-bold mb-3">RECETTE</h2>
+
+                <div className="w-full space-y-3">
+                  {slots.map((slot, idx) => (
+                      <div
+                          key={idx}
+                          className="w-full rounded-2xl bg-[#2a1b16]/60 border border-white/10 px-4 py-3 flex items-center justify-between"
+                      >
+                        <span className="font-semibold">SLOT {idx + 1}</span>
+                        <span className="opacity-80">{slotLabel(slot)}</span>
+                      </div>
+                  ))}
+                </div>
+
+                <div className="mt-5 flex gap-3">
+                  <button
+                      type="button"
+                      onClick={handleReset}
+                      className="rounded-xl border border-white/20 px-6 py-2 hover:bg-white/10 transition"
+                  >
+                    RESET
+                  </button>
+
+                  <button
+                      type="button"
+                      onClick={handleBrew}
+                      disabled={loading}
+                      className="rounded-xl bg-[#c98d5b] text-black font-bold px-6 py-2 hover:brightness-110 disabled:opacity-60 transition"
+                  >
+                    {loading ? "BREW..." : "BREW"}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h2 className="text-xl font-bold mb-3">PROFIL DE LA BOISSON</h2>
+
+                <div className="space-y-4 rounded-2xl bg-[#2a1b16]/40 border border-white/10 p-4">
+                  <div className="flex items-center justify-between">
+                    <span>WARM</span>
+                    <span className="opacity-70">0/5</span>
                   </div>
-                ))}
+                  <div className="flex items-center justify-between">
+                    <span>COOL</span>
+                    <span className="opacity-70">0/5</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>SWEET</span>
+                    <span className="opacity-70">0/5</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>BITTER</span>
+                    <span className="opacity-70">0/5</span>
+                  </div>
+
+                  <p className="text-xs opacity-70 mt-2">
+                  </p>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </>
+      </>
   );
 }
 
