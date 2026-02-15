@@ -1,163 +1,173 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
+import { apiFetch } from "../api";
 
-const API_URL = 'http://localhost:3001'; // http, pas https en local
+export default function Market() {
+  const token = useMemo(() => localStorage.getItem("token"), []);
+  const API_BG = "/pixel-jess-night-market-start-rng.jpg"; // fichier dans /public
 
-// Ingrédients achetables
-const SHOP_ITEMS = [
-  { id: 'coffee', name: 'Coffee', price: 10 },
-  { id: 'milk', name: 'Milk', price: 5 },
-  { id: 'matcha', name: 'Matcha', price: 15 },
-  { id: 'chai', name: 'Chai', price: 12 },
-  { id: 'ginger', name: 'Ginger', price: 8 },
-  { id: 'cinnamon', name: 'Cinnamon', price: 7 },
-  { id: 'honey', name: 'Honey', price: 9 },
-  { id: 'lemon', name: 'Lemon', price: 6 },
-];
+  const [ingredients, setIngredients] = useState([]);
+  const [cash, setCash] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-function Market() {
-  // quantité pour chaque item du shop
-  const [quantities, setQuantities] = useState(
-    SHOP_ITEMS.reduce((acc, item) => {
-      acc[item.id] = 0;
-      return acc;
-    }, {}),
-  );
+  const [qtyById, setQtyById] = useState({});
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [cash, setCash] = useState(0); // à remplir plus tard avec /state
-  const [message, setMessage] = useState('');
+  async function loadData() {
+    setError("");
+    setSuccess("");
+    setLoading(true);
+    try {
+      if (!token) {
+        setError("Tu n'es pas connecté(e). Reviens sur /login.");
+        return;
+      }
 
-  // changer la quantité d'un item
-  function handleQuantityChange(itemId, value) {
-    const q = Math.max(0, parseInt(value, 10) || 0); // pas de négatif
-    setQuantities((prev) => ({ ...prev, [itemId]: q }));
+      
+      const ing = await apiFetch("/ingredients", { token });
+      setIngredients(Array.isArray(ing) ? ing : []);
+
+      const state = await apiFetch("/restaurant/state", { token });
+      setCash(state?.cash ?? null);
+    } catch (e) {
+      setError(e.message || "Erreur de chargement");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  // coût total local
-  const totalCost = SHOP_ITEMS.reduce(
-    (total, item) => total + item.price * (quantities[item.id] || 0),
-    0,
-  );
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  // achat et envoi au back
-  async function handleBuy() {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setMessage('You must be logged in to buy ingredients');
-      return;
-    }
+  async function handleBuy(ingredientId) {
+    setError("");
+    setSuccess("");
 
-    // construire une liste d’items à acheter
-    const itemsToBuy = SHOP_ITEMS
-      .filter((item) => quantities[item.id] > 0)
-      .map((item) => ({
-        id: item.id, // adapte à ce que ton back attend (ingredientId ?)
-        quantity: quantities[item.id],
-      }));
-
-    if (itemsToBuy.length === 0) {
-      setMessage('Please select at least one ingredient to buy');
+    const qty = Number(qtyById[ingredientId] ?? 1);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setError("Quantité invalide");
       return;
     }
 
     try {
-      setMessage('');
-      const response = await fetch(`${API_URL}/market/buy`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ items: itemsToBuy }),
+      const res = await apiFetch("/market/buy", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ ingredientId: Number(ingredientId), qty }),
       });
 
-      if (!response.ok) {
-        let errorText = 'Error buying ingredients, not enough money?';
-        try {
-          const errorData = await response.json();
-          if (errorData.message) errorText = errorData.message;
-        } catch {
-          // ignore si pas de JSON
-        }
-        setMessage(errorText);
-        return;
-      }
+      const newCash = res?.data?.cash ?? res?.cash;
+      if (typeof newCash !== "undefined" && newCash !== null) setCash(newCash);
 
-      const data = await response.json();
-      // à adapter au format exact de ta réponse
-      if (typeof data.cash === 'number') {
-        setCash(data.cash);
-      }
-      setMessage('Purchase successful!');
+      setSuccess("Achat effectué ✅");
 
-      // reset des quantités après achat
-      setQuantities(
-        SHOP_ITEMS.reduce((acc, item) => {
-          acc[item.id] = 0;
-          return acc;
-        }, {}),
-      );
-    } catch (err) {
-      console.error(err);
-      setMessage('Connection to server error');
+    } catch (e) {
+      setError(e.message || "Erreur d'achat");
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#F5E9DA]">
-      <div className="bg-[#1b120f]/90 text-[#f5e9da] rounded-3xl shadow-2xl p-8 w-full max-w-4xl">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold tracking-wide">Bobo&apos;s Market</h1>
-          <div className="text-sm">
-            Cash : <span className="font-semibold">{cash} $</span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {SHOP_ITEMS.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-col gap-2 bg-[#2a1c16] border border-black/40 rounded-xl px-4 py-3"
-            >
-              <div className="flex items-center justify-between">
+      <div
+          className="min-h-screen bg-cover bg-center"
+          style={{ backgroundImage: `url('${API_BG}')` }}
+      >
+        <div className="min-h-screen bg-black/50">
+          <div className="mx-auto max-w-5xl px-4 py-10">
+            <div className="rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 p-6 shadow-xl">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="text-sm font-semibold">{item.name}</div>
-                  <div className="text-xs text-[#d0bba3]">{item.price} $</div>
+                  <h1 className="text-3xl font-extrabold text-white">Bobo’s Market</h1>
+                  <p className="text-white/80">Achète des ingrédients pour remplir ton stock.</p>
+                </div>
+
+                <div className="rounded-xl bg-black/30 border border-white/10 px-4 py-3 text-white">
+                  <div className="text-xs uppercase tracking-wide text-white/70">Cash</div>
+                  <div className="text-xl font-bold">
+                    {cash === null ? "—" : `${cash}`}
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center justify-end gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  className="w-16 rounded-full border border-black/40 px-2 py-1 text-sm bg-[#1b120f]"
-                  value={quantities[item.id]}
-                  onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                />
+
+              <div className="mt-4">
+                {error && (
+                    <div className="mb-3 rounded-lg border border-red-400/30 bg-red-500/20 px-4 py-2 text-red-100">
+                      {error}
+                    </div>
+                )}
+                {success && (
+                    <div className="mb-3 rounded-lg border border-green-400/30 bg-green-500/20 px-4 py-2 text-green-100">
+                      {success}
+                    </div>
+                )}
+              </div>
+
+              {loading ? (
+                  <p className="mt-6 text-white/80">Chargement…</p>
+              ) : (
+                  <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {ingredients.map((ing) => (
+                        <div
+                            key={String(ing.id)}
+                            className="rounded-2xl bg-black/30 border border-white/10 p-4 text-white"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-lg font-bold">{ing.name}</div>
+                              <div className="text-sm text-white/70">
+                                Coût unité : <span className="font-semibold">{ing.unit_cost}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center gap-2">
+                            <input
+                                type="number"
+                                min={1}
+                                className="w-20 rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white outline-none"
+                                value={qtyById[ing.id] ?? 1}
+                                onChange={(e) =>
+                                    setQtyById((prev) => ({
+                                      ...prev,
+                                      [ing.id]: e.target.value,
+                                    }))
+                                }
+                            />
+                            <button
+                                onClick={() => handleBuy(ing.id)}
+                                className="flex-1 rounded-lg bg-amber-500/90 hover:bg-amber-500 px-4 py-2 font-semibold text-black transition"
+                            >
+                              Acheter
+                            </button>
+                          </div>
+                        </div>
+                    ))}
+
+                    {ingredients.length === 0 && (
+                        <p className="text-white/80">Aucun ingrédient en base.</p>
+                    )}
+                  </div>
+              )}
+
+              <div className="mt-8 flex gap-3">
+                <a
+                    href="/lab"
+                    className="rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 text-white transition"
+                >
+                  Retour au Lab
+                </a>
+                <button
+                    onClick={loadData}
+                    className="rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 px-4 py-2 text-white transition"
+                >
+                  Rafraîchir
+                </button>
               </div>
             </div>
-          ))}
-        </div>
-
-        <div className="mt-6 flex justify-between items-center">
-          <div className="text-sm">
-            Total : <span className="font-semibold">{totalCost} $</span>
           </div>
-          <button
-            type="button"
-            onClick={handleBuy}
-            className="px-5 py-2 text-xs font-semibold uppercase tracking-widest rounded-lg bg-[#d89a6a] text-[#1b130f] hover:bg-[#e5aa7a] transition"
-          >
-            Buy
-          </button>
         </div>
-
-        {message && (
-          <p className="mt-3 text-sm text-[#f5b2b2]">
-            {message}
-          </p>
-        )}
       </div>
-    </div>
   );
 }
 
-export default Market;
+
